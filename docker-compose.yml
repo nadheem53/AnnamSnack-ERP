@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: annam_food_erp_db
+    restart: always
+    environment:
+      POSTGRES_USER: annam_admin
+      POSTGRES_PASSWORD: annam_secure_pass
+      POSTGRES_DB: annam_food_erp
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+

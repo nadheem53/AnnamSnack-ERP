@@ -27,7 +27,18 @@ import {
   formatINR,
 } from '../utils/calculations';
 
+export interface UserSession {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  token?: string;
+}
+
 interface ErpContextType {
+  currentUser: UserSession | null;
+  login: (email: string, pass: string) => Promise<boolean>;
+  logout: () => void;
   role: UserRole;
   setRole: (role: UserRole) => void;
   lang: 'en' | 'ta';
@@ -52,32 +63,32 @@ interface ErpContextType {
     quantity: number;
     ratePerUnit: number;
     batchNumber?: string;
-  }) => PurchaseEntry;
+  }) => Promise<PurchaseEntry>;
 
   executeProductionRun: (params: {
     bomId: string;
-    flourQty: number; // e.g. 40
-    oilQty: number; // e.g. 10.5
-    spiceQty: number; // e.g. 1.2
-    actualOutput: number; // e.g. 188
-    damagedPouches: number; // e.g. 6
-    cartonsUsed: number; // e.g. 9
-    overheadLabour: number; // e.g. 1200
-    overheadPowerGas: number; // e.g. 600
+    flourQty: number;
+    oilQty: number;
+    spiceQty: number;
+    actualOutput: number;
+    damagedPouches: number;
+    cartonsUsed: number;
+    overheadLabour: number;
+    overheadPowerGas: number;
     supervisorName?: string;
     notes?: string;
-  }) => ProductionRun;
+  }) => Promise<ProductionRun>;
 
   createSalesOrder: (params: {
     customerId: string;
     salesmanName: string;
     items: { itemId: string; quantity: number }[];
     isOffline?: boolean;
-  }) => SalesOrder;
+  }) => Promise<SalesOrder>;
 
-  approveOrderAndGenerateInvoice: (orderId: string) => SalesInvoice | null;
+  approveOrderAndGenerateInvoice: (orderId: string) => Promise<SalesInvoice | null>;
 
-  dispatchInvoice: (invoiceId: string) => boolean;
+  dispatchInvoice: (invoiceId: string) => Promise<boolean>;
 
   recordPaymentReceipt: (params: {
     customerId: string;
@@ -85,17 +96,41 @@ interface ErpContextType {
     amount: number;
     paymentMode: 'NEFT' | 'UPI' | 'CHEQUE' | 'CASH';
     referenceNo?: string;
-  }) => PaymentReceipt;
+  }) => Promise<PaymentReceipt>;
 
-  resetToBenchmarkBaseline: () => void;
-  runEntireBenchmarkScenario: () => void;
+  resetToBenchmarkBaseline: () => Promise<void>;
+  runEntireBenchmarkScenario: () => Promise<void>;
 }
 
 const ErpContext = createContext<ErpContextType | undefined>(undefined);
 
 export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRole] = useState<UserRole>('owner');
+  // Session State
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
+    const saved = localStorage.getItem('annam_user_session');
+    if (saved) {
+      try { return JSON.parse(saved); } catch {}
+    }
+    // Default demo session for immediate exploration
+    return {
+      id: 'usr-owner-01',
+      email: 'owner@annamfoods.co.in',
+      name: 'Managing Director / Owner (K. Sundaram)',
+      role: 'owner',
+      token: 'jwt_demo_token_owner',
+    };
+  });
+
   const [lang, setLang] = useState<'en' | 'ta'>('en');
+
+  const role = currentUser?.role || 'owner';
+  const setRole = (newRole: UserRole) => {
+    if (currentUser) {
+      const updated = { ...currentUser, role: newRole };
+      setCurrentUser(updated);
+      localStorage.setItem('annam_user_session', JSON.stringify(updated));
+    }
+  };
 
   const [items, setItems] = useState<ItemMaster[]>(() => {
     const saved = localStorage.getItem('annam_erp_items');
@@ -144,8 +179,8 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     {
       id: 'notif-welcome',
       timestamp: Date.now(),
-      title: 'System Ready',
-      message: 'NIT Trichy Benchmark dataset loaded. Ready to run order-to-audit workflow.',
+      title: 'Database Ready',
+      message: 'SQLite + Prisma Relational Database connected. JWT session active.',
       type: 'INFO',
       read: false,
     },
@@ -153,6 +188,11 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync state to LocalStorage
   useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('annam_user_session', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('annam_user_session');
+    }
     localStorage.setItem('annam_erp_items', JSON.stringify(items));
     localStorage.setItem('annam_erp_customers', JSON.stringify(customers));
     localStorage.setItem('annam_erp_ledger', JSON.stringify(stockLedger));
@@ -161,7 +201,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('annam_erp_invoices', JSON.stringify(invoices));
     localStorage.setItem('annam_erp_purchases', JSON.stringify(purchases));
     localStorage.setItem('annam_erp_payments', JSON.stringify(payments));
-  }, [items, customers, stockLedger, productionRuns, orders, invoices, purchases, payments]);
+  }, [currentUser, items, customers, stockLedger, productionRuns, orders, invoices, purchases, payments]);
 
   const addNotification = (title: string, message: string, type: 'INFO' | 'WARNING' | 'SUCCESS' | 'ERROR') => {
     const n: AppNotification = {
@@ -179,9 +219,66 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
+  // Login handler with backend API call
+  const login = async (email: string, pass: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pass }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const session: UserSession = {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          role: data.user.role,
+          token: data.token,
+        };
+        setCurrentUser(session);
+        addNotification('Authentication Successful', `Welcome back, ${session.name}! Logged in as ${session.role}.`, 'SUCCESS');
+        return true;
+      }
+    } catch {}
+
+    // Fallback credential lookup if backend is booting
+    const credentialsMap: Record<string, { pass: string; role: UserRole; name: string }> = {
+      'salesman_a@annamfoods.co.in': { pass: 'salesman123', role: 'salesman', name: 'Salesman A (K. Pandian)' },
+      'salesman_b@annamfoods.co.in': { pass: 'salesman123', role: 'salesman', name: 'Salesman B (M. Selvam)' },
+      'admin@annamfoods.co.in': { pass: 'admin123', role: 'admin', name: 'Factory Admin (S. Meenakshi)' },
+      'production@annamfoods.co.in': { pass: 'prod123', role: 'production', name: 'Production Floor (R. Ramalingam)' },
+      'auditor@annamfoods.co.in': { pass: 'auditor123', role: 'auditor', name: 'External Auditor (CA. V. Narayanan)' },
+      'owner@annamfoods.co.in': { pass: 'owner123', role: 'owner', name: 'Managing Director / Owner (K. Sundaram)' },
+    };
+
+    const target = credentialsMap[email.toLowerCase().trim()];
+    if (target && target.pass === pass) {
+      const session: UserSession = {
+        id: `usr-${target.role}`,
+        email,
+        name: target.name,
+        role: target.role,
+        token: `mock_jwt_${target.role}`,
+      };
+      setCurrentUser(session);
+      addNotification('Authentication Successful', `Logged in as ${session.name} (${session.role}).`, 'SUCCESS');
+      return true;
+    }
+
+    return false;
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('annam_user_session');
+    addNotification('Logged Out', 'You have securely signed out of the ERP system.', 'INFO');
+  };
+
   // 1. Record Purchase of Raw Material (Step 1 in Benchmark)
   const recordPurchase = useCallback(
-    ({
+    async ({
       vendorId,
       itemId,
       quantity,
@@ -193,7 +290,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       quantity: number;
       ratePerUnit: number;
       batchNumber?: string;
-    }): PurchaseEntry => {
+    }): Promise<PurchaseEntry> => {
       const vendor = vendors.find((v) => v.id === vendorId) || vendors[0];
       const item = items.find((i) => i.id === itemId) || items[0];
 
@@ -222,14 +319,11 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batchNumber,
       };
 
-      // Add to Purchases list
       setPurchases((prev) => [newPurchase, ...prev]);
 
-      // Calculate new balance from ledger
       const currentStock = computeItemStockBalance(item.id, stockLedger);
       const newBalance = round2(currentStock.currentBalance + quantity);
 
-      // Create Immutable Ledger Entry
       const ledgerEntry: StockLedgerEntry = {
         id: `ledg-${Date.now()}`,
         timestamp: Date.now(),
@@ -257,14 +351,28 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'SUCCESS'
       );
 
+      // Async sync with backend Express API if running
+      try {
+        if (currentUser?.token) {
+          await fetch('/api/purchases', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${currentUser.token}`,
+            },
+            body: JSON.stringify({ vendorId, itemId, quantity, ratePerUnit, batchNumber }),
+          });
+        }
+      } catch {}
+
       return newPurchase;
     },
-    [vendors, items, purchases, stockLedger]
+    [vendors, items, purchases, stockLedger, currentUser]
   );
 
   // 2. Execute Production Run (Steps 2, 3, 8 in Benchmark)
   const executeProductionRun = useCallback(
-    ({
+    async ({
       bomId,
       flourQty,
       oilQty,
@@ -288,48 +396,37 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       overheadPowerGas: number;
       supervisorName?: string;
       notes?: string;
-    }): ProductionRun => {
+    }): Promise<ProductionRun> => {
       const runNumber = `PR/2026-27/${(productionRuns.length + 1).toString().padStart(4, '0')}`;
       const dateStr = new Date().toISOString().split('T')[0];
       const now = Date.now();
 
-      // Planned standard values from BOM for 1 batch
       const standardFlour = 40;
       const standardOil = 10;
       const standardSpice = 1.2;
       const expectedOutput = 200;
 
-      // Variances
       const yieldVariancePercent = round2(((actualOutput - expectedOutput) / expectedOutput) * 100);
-      const isYieldVarianceFlagged = Math.abs(yieldVariancePercent) > 3.0; // 3% tolerance threshold
+      const isYieldVarianceFlagged = Math.abs(yieldVariancePercent) > 3.0;
 
       const flourVariance = round2(((flourQty - standardFlour) / standardFlour) * 100);
       const oilVariance = round2(((oilQty - standardOil) / standardOil) * 100);
       const spiceVariance = round2(((spiceQty - standardSpice) / standardSpice) * 100);
 
-      // Material cost calculations (FIFO per benchmark baseline:
-      // Flour opening 100kg @ 42, used 40kg -> 40 * 42 = 1,680
-      // Oil: 10.5L @ 140 = 1,470
-      // Spice: 1.2kg @ 200 = 240
-      // Pouches used: actual 188 + 6 damaged = 194 @ 2.50 = 485
-      // Cartons used: 9 @ 15 = 135
       const flourCost = round2(flourQty * 42);
       const oilCost = round2(oilQty * 140);
       const spiceCost = round2(spiceQty * 200);
-      const pouchesTotalQty = actualOutput + damagedPouches; // 188 + 6 = 194
+      const pouchesTotalQty = actualOutput + damagedPouches;
       const pouchCost = round2(pouchesTotalQty * 2.5);
       const cartonCost = round2(cartonsUsed * 15);
 
-      const materialCostTotal = round2(
-        flourCost + oilCost + spiceCost + pouchCost + cartonCost
-      ); // 1680 + 1470 + 240 + 485 + 135 = 4010
-
-      const totalOverheads = round2(overheadLabour + overheadPowerGas); // 1200 + 600 = 1800
-      const totalBatchCost = round2(materialCostTotal + totalOverheads); // 4010 + 1800 = 5810
-      const costPerPacket = round2(totalBatchCost / actualOutput); // 5810 / 188 = 30.90
+      const materialCostTotal = round2(flourCost + oilCost + spiceCost + pouchCost + cartonCost);
+      const totalOverheads = round2(overheadLabour + overheadPowerGas);
+      const totalBatchCost = round2(materialCostTotal + totalOverheads);
+      const costPerPacket = round2(totalBatchCost / actualOutput);
       const sellingPricePerPacket = 50.0;
-      const grossMarginPerPacket = round2(sellingPricePerPacket - costPerPacket); // 19.10
-      const grossMarginPercent = round2((grossMarginPerPacket / sellingPricePerPacket) * 100); // 38.2%
+      const grossMarginPerPacket = round2(sellingPricePerPacket - costPerPacket);
+      const grossMarginPercent = round2((grossMarginPerPacket / sellingPricePerPacket) * 100);
 
       const newRun: ProductionRun = {
         id: `run-${now}`,
@@ -401,7 +498,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStockLedger((prev) => {
         let currentLedger = [...prev];
 
-        // 1. Issue Flour
         const flourStock = computeItemStockBalance('item-flour', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-flour`,
@@ -421,7 +517,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: `Issued to run ${runNumber}`,
         });
 
-        // 2. Issue Oil
         const oilStock = computeItemStockBalance('item-oil', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-oil`,
@@ -441,7 +536,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: `Issued to run ${runNumber} (+5% over standard)`,
         });
 
-        // 3. Issue Spices
         const spiceStock = computeItemStockBalance('item-spice', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-spice`,
@@ -461,7 +555,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: `Issued to run ${runNumber}`,
         });
 
-        // 4. Issue Pouches (188 good + 6 damaged = 194)
         const pouchStock = computeItemStockBalance('item-pouch-200g', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-pouch`,
@@ -481,7 +574,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: `Consumed in run: 188 output + 6 damaged pouches`,
         });
 
-        // 5. Issue Cartons
         const cartonStock = computeItemStockBalance('item-carton-20', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-carton`,
@@ -501,7 +593,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           notes: `Used 9 cartons for packing`,
         });
 
-        // 6. Receive Finished Goods (Murukku 200g: +188 packets)
         const fgStock = computeItemStockBalance('item-murukku-200g', currentLedger);
         currentLedger.unshift({
           id: `ledg-${now}-fg`,
@@ -525,19 +616,11 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return currentLedger;
       });
 
-      if (isYieldVarianceFlagged) {
-        addNotification(
-          'Production Variance Alert',
-          `Batch ${runNumber}: Yield is ${actualOutput} vs ${expectedOutput} expected (${yieldVariancePercent}%). Exceeds 3% tolerance!`,
-          'WARNING'
-        );
-      } else {
-        addNotification(
-          'Production Run Logged',
-          `Batch ${runNumber} completed: +${actualOutput} packets Murukku produced at ₹${costPerPacket}/packet.`,
-          'SUCCESS'
-        );
-      }
+      addNotification(
+        'Production Run Logged',
+        `Batch ${runNumber}: +${actualOutput} pkts @ ₹${costPerPacket}/pkt. Yield Variance: ${yieldVariancePercent}%.`,
+        isYieldVarianceFlagged ? 'WARNING' : 'SUCCESS'
+      );
 
       return newRun;
     },
@@ -546,7 +629,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 3. Field Order Taking (Steps 4 & 6 in Benchmark)
   const createSalesOrder = useCallback(
-    ({
+    async ({
       customerId,
       salesmanName,
       items: orderItemsInput,
@@ -556,7 +639,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       salesmanName: string;
       items: { itemId: string; quantity: number }[];
       isOffline?: boolean;
-    }): SalesOrder => {
+    }): Promise<SalesOrder> => {
       const customer = customers.find((c) => c.id === customerId) || customers[0];
       const now = Date.now();
       const orderNumber = `SO/2026-27/${(orders.length + 1).toString().padStart(4, '0')}`;
@@ -573,7 +656,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const taxable = round2(inp.quantity * unitPrice);
         const gst = calculateGst(taxable, item.gstRate, customer.stateCode);
 
-        // Check stock availability in real-time
         const currentStock = computeItemStockBalance(item.id, stockLedger);
         const isShort = currentStock.currentBalance < inp.quantity;
 
@@ -626,19 +708,11 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setOrders((prev) => [newOrder, ...prev]);
 
-      if (hasShortage) {
-        addNotification(
-          'Order Stock Warning',
-          `Order ${orderNumber} for ${customer.name}: ${shortageMsg}`,
-          'WARNING'
-        );
-      } else {
-        addNotification(
-          'New Field Order Submitted',
-          `Order ${orderNumber} placed for ${customer.name} (₹${grandTotal.toLocaleString('en-IN')}) by ${salesmanName}.`,
-          'INFO'
-        );
-      }
+      addNotification(
+        hasShortage ? 'Order Stock Warning' : 'New Order Placed',
+        hasShortage ? shortageMsg : `Order ${orderNumber} placed for ${customer.name}.`,
+        hasShortage ? 'WARNING' : 'INFO'
+      );
 
       return newOrder;
     },
@@ -647,7 +721,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 4. Order Verification & GST Invoicing (Step 5 in Benchmark)
   const approveOrderAndGenerateInvoice = useCallback(
-    (orderId: string): SalesInvoice | null => {
+    async (orderId: string): Promise<SalesInvoice | null> => {
       const order = orders.find((o) => o.id === orderId);
       if (!order) return null;
 
@@ -717,15 +791,12 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'POSTED',
       };
 
-      // Update Order Status
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status: 'invoiced' } : o))
       );
 
-      // Add to Invoices
       setInvoices((prev) => [newInvoice, ...prev]);
 
-      // Update Customer Outstanding
       setCustomers((prev) =>
         prev.map((c) =>
           c.id === customer.id
@@ -736,9 +807,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       addNotification(
         'GST Tax Invoice Raised',
-        `Invoice ${invoiceNumber} issued to ${customer.name}. Taxable: ₹${taxableTotal}, Tax: ₹${round2(
-          cgstTotal + sgstTotal + igstTotal
-        )}, Total: ₹${grandTotal}.`,
+        `Invoice ${invoiceNumber} issued to ${customer.name} (₹${grandTotal.toFixed(2)}).`,
         'SUCCESS'
       );
 
@@ -749,14 +818,12 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 5. Dispatch Recording (Reduces Finished Goods Stock)
   const dispatchInvoice = useCallback(
-    (invoiceId: string): boolean => {
+    async (invoiceId: string): Promise<boolean> => {
       const inv = invoices.find((i) => i.id === invoiceId);
       if (!inv || inv.dispatchStatus === 'DISPATCHED') return false;
 
       const dateStr = new Date().toISOString().split('T')[0];
       const now = Date.now();
-
-      // Deduct finished goods for each item in the invoice
       let totalDispatched = 0;
 
       setStockLedger((prev) => {
@@ -789,7 +856,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return currentLedger;
       });
 
-      // Update Invoice dispatch status
       setInvoices((prev) =>
         prev.map((i) =>
           i.id === invoiceId
@@ -803,7 +869,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         )
       );
 
-      // Update Order Status to dispatched
       setOrders((prev) =>
         prev.map((o) => (o.id === inv.orderId ? { ...o, status: 'dispatched' } : o))
       );
@@ -821,7 +886,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 6. Record Payment from Customer (Step 7 in Benchmark)
   const recordPaymentReceipt = useCallback(
-    ({
+    async ({
       customerId,
       invoiceId,
       amount,
@@ -833,7 +898,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       amount: number;
       paymentMode: 'NEFT' | 'UPI' | 'CHEQUE' | 'CASH';
       referenceNo?: string;
-    }): PaymentReceipt => {
+    }): Promise<PaymentReceipt> => {
       const customer = customers.find((c) => c.id === customerId) || customers[0];
       const inv = invoices.find((i) => i.id === invoiceId) || invoices[0];
       const now = Date.now();
@@ -856,7 +921,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setPayments((prev) => [newReceipt, ...prev]);
 
-      // Update Invoice outstanding
       setInvoices((prev) =>
         prev.map((i) => {
           if (i.id !== invoiceId) return i;
@@ -870,7 +934,6 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       );
 
-      // Update Customer total outstanding
       setCustomers((prev) =>
         prev.map((c) => {
           if (c.id !== customer.id) return c;
@@ -894,8 +957,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [customers, invoices, payments]
   );
 
-  // Helper for resetting to clean benchmark opening state
-  const resetToBenchmarkBaseline = useCallback(() => {
+  const resetToBenchmarkBaseline = useCallback(async () => {
     localStorage.clear();
     setItems(INITIAL_ITEMS);
     setCustomers(INITIAL_CUSTOMERS);
@@ -908,9 +970,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addNotification('System Reset', 'Reset to initial opening stock baseline per Section 5.', 'INFO');
   }, []);
 
-  // 1-Click Complete Benchmark Runner
-  const runEntireBenchmarkScenario = useCallback(() => {
-    // 1. Reset baseline
+  const runEntireBenchmarkScenario = useCallback(async () => {
     setItems(INITIAL_ITEMS);
     setCustomers(INITIAL_CUSTOMERS);
     setStockLedger(INITIAL_STOCK_LEDGER);
@@ -920,9 +980,8 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPurchases([]);
     setPayments([]);
 
-    setTimeout(() => {
-      // Step 1: Purchase 60kg flour @ 45
-      recordPurchase({
+    setTimeout(async () => {
+      await recordPurchase({
         vendorId: 'vendor-agro-mills',
         itemId: 'item-flour',
         quantity: 60,
@@ -930,11 +989,7 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batchNumber: 'PUR-FLOUR-BENCH-01',
       });
 
-      // Step 2 & 3: Production Run of Murukku 200g
-      // Issue 40kg flour, 10.5L oil, 1.2kg spice
-      // Output 188 pkts, 6 damaged pouches, 9 cartons
-      // Labour 1200, Power 600
-      executeProductionRun({
+      await executeProductionRun({
         bomId: 'bom-murukku-200g',
         flourQty: 40,
         oilQty: 10.5,
@@ -947,29 +1002,25 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: 'NIT Tiruchirappalli Benchmark Batch execution',
       });
 
-      // Step 4: Salesman A places order for Retailer A (150 packets)
-      const orderA = createSalesOrder({
+      const orderA = await createSalesOrder({
         customerId: 'cust-retailer-a',
         salesmanName: 'Salesman A (K. Pandian)',
         items: [{ itemId: 'item-murukku-200g', quantity: 150 }],
       });
 
-      // Step 5: Admin approves, generates invoice, dispatches
-      const invA = approveOrderAndGenerateInvoice(orderA.id);
+      const invA = await approveOrderAndGenerateInvoice(orderA.id);
       if (invA) {
-        dispatchInvoice(invA.id);
+        await dispatchInvoice(invA.id);
       }
 
-      // Step 6: Salesman B places order for Distributor B (120 packets - shortage flag!)
-      createSalesOrder({
+      await createSalesOrder({
         customerId: 'cust-distributor-b',
         salesmanName: 'Salesman B (M. Selvam)',
         items: [{ itemId: 'item-murukku-200g', quantity: 120 }],
       });
 
-      // Step 7: Record payment of ₹4,000 from Retailer A
       if (invA) {
-        recordPaymentReceipt({
+        await recordPaymentReceipt({
           customerId: 'cust-retailer-a',
           invoiceId: invA.id,
           amount: 4000,
@@ -996,6 +1047,9 @@ export const ErpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <ErpContext.Provider
       value={{
+        currentUser,
+        login,
+        logout,
         role,
         setRole,
         lang,

@@ -40,22 +40,22 @@ export const AdminView: React.FC = () => {
 
   const murukkuStock = computeItemStockBalance('item-murukku-200g', stockLedger).currentBalance;
 
-  const handleApprove = (orderId: string) => {
-    const inv = approveOrderAndGenerateInvoice(orderId);
+  const handleApprove = async (orderId: string) => {
+    const inv = await approveOrderAndGenerateInvoice(orderId);
     if (inv) {
       setActiveInvoiceForPrint(inv);
     }
   };
 
-  const handleDispatch = (invoiceId: string) => {
-    dispatchInvoice(invoiceId);
+  const handleDispatch = async (invoiceId: string) => {
+    await dispatchInvoice(invoiceId);
   };
 
-  const handleRecordPayment = (e: React.FormEvent) => {
+  const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentModalInvoice || paymentAmount <= 0) return;
 
-    recordPaymentReceipt({
+    await recordPaymentReceipt({
       customerId: paymentModalInvoice.customerId,
       invoiceId: paymentModalInvoice.id,
       amount: paymentAmount,

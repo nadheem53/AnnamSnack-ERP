@@ -1,0 +1,295 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   // 'salesman' | 'admin' | 'production' | 'auditor' | 'owner'
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+model Item {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  nameTamil    String?
+  category     String   // 'raw_material' | 'packaging' | 'finished_goods' | 'wip'
+  uom          String   // 'kg' | 'litre' | 'piece' | 'packet' | 'carton'
+  hsnCode      String
+  gstRate      Float    @default(5.0)
+  standardCost Float    @default(0.0)
+  sellingPrice Float?   // MRP / Selling price for FG
+  reorderLevel Float    @default(0.0)
+
+  bomComponents     BomComponent[]
+  stockLedgerEntries StockLedgerEntry[]
+}
+
+model Customer {
+  id                 String   @id @default(uuid())
+  code               String   @unique
+  name               String
+  type               String   // 'retailer' | 'distributor'
+  contactPerson      String
+  phone              String
+  city               String
+  state              String
+  stateCode          String   // '33' for TN, '29' for KA
+  gstin              String?
+  creditLimit        Float    @default(50000.0)
+  creditDays         Int      @default(15)
+  outstandingBalance Float    @default(0.0)
+
+  orders   SalesOrder[]
+  invoices SalesInvoice[]
+  payments PaymentReceipt[]
+}
+
+model Vendor {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  city      String
+  state     String
+  stateCode String
+  gstin     String
+  phone     String
+
+  purchases PurchaseEntry[]
+}
+
+model BillOfMaterials {
+  id                 String   @id @default(uuid())
+  finishedGoodsId    String
+  finishedGoodsName  String
+  batchSizeExpected  Float    @default(200.0)
+  batchUom           String   @default("packet")
+  description        String
+
+  components BomComponent[]
+}
+
+model BomComponent {
+  id               String          @id @default(uuid())
+  bomId            String
+  itemId           String
+  itemName         String
+  quantityPerBatch Float
+  uom              String
+  standardRate     Float
+  isPackaging      Boolean         @default(false)
+
+  bom  BillOfMaterials @relation(fields: [bomId], references: [id])
+  item Item            @relation(fields: [itemId], references: [id])
+}
+
+model StockLedgerEntry {
+  id             String   @id @default(uuid())
+  timestamp      BigInt
+  dateStr        String
+  itemId         String
+  itemName       String
+  category       String
+  uom            String
+  movementType   String   // 'OPENING' | 'PURCHASE_RECEIPT' | 'PRODUCTION_ISSUE' | 'PRODUCTION_RECEIPT' | 'DISPATCH' | 'DAMAGE_SCRAP'
+  quantityChange Float
+  balanceAfter   Float
+  unitRate       Float
+  totalValue     Float
+  sourceDocType  String
+  sourceDocId    String
+  batchNumber    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  item Item @relation(fields: [itemId], references: [id])
+}
+
+model ProductionRun {
+  id                     String   @id @default(uuid())
+  runNumber              String   @unique
+  dateStr                String
+  timestamp              BigInt
+  bomId                  String
+  finishedGoodsId        String
+  finishedGoodsName      String
+  batchCount             Float    @default(1.0)
+  expectedYield          Float    @default(200.0)
+  actualOutput           Float
+  yieldVariancePercent   Float
+  isYieldVarianceFlagged Boolean  @default(false)
+  damagedPouches         Int      @default(0)
+  cartonsUsed            Int      @default(0)
+  materialCostTotal      Float
+  overheadLabour         Float    @default(1200.0)
+  overheadPowerGas       Float    @default(600.0)
+  totalBatchCost         Float
+  costPerPacket          Float
+  sellingPricePerPacket  Float    @default(50.0)
+  grossMarginPerPacket   Float
+  grossMarginPercent     Float
+  valuationMethod        String   @default("FIFO")
+  supervisorName         String
+  notes                  String?
+  createdAt              DateTime @default(now())
+
+  items ProductionRunItem[]
+}
+
+model ProductionRunItem {
+  id                String        @id @default(uuid())
+  runId             String
+  itemId            String
+  itemName          String
+  standardQty       Float
+  actualQty         Float
+  uom               String
+  variancePercent   Float
+  isVarianceFlagged Boolean       @default(false)
+  unitCost          Float
+  totalCost         Float
+
+  run ProductionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model SalesOrder {
+  id                 String      @id @default(uuid())
+  orderNumber        String      @unique
+  dateStr            String
+  timestamp          BigInt
+  customerId         String
+  customerName       String
+  customerState      String
+  customerStateCode  String
+  salesmanId         String
+  salesmanName       String
+  subtotal           Float
+  taxTotal           Float
+  grandTotal         Float
+  status             String      // 'submitted' | 'approved' | 'invoiced' | 'dispatched' | 'rejected'
+  isOfflineSubmitted Boolean     @default(false)
+  stockSufficiency   String      // 'FULL' | 'PARTIAL_SHORTAGE'
+  shortageMessage    String?
+  createdAt          DateTime    @default(now())
+
+  customer Customer    @relation(fields: [customerId], references: [id])
+  items    OrderItem[]
+}
+
+model OrderItem {
+  id                      String     @id @default(uuid())
+  orderId                 String
+  itemId                  String
+  itemName                String
+  quantity                Float
+  uom                     String
+  unitPrice               Float
+  taxableValue            Float
+  gstRate                 Float
+  gstAmount               Float
+  totalAmount             Float
+  stockAvailableAtBooking Float
+  isShortage              Boolean    @default(false)
+
+  order SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model SalesInvoice {
+  id                String   @id @default(uuid())
+  invoiceNumber     String   @unique
+  dateStr           String
+  timestamp         BigInt
+  orderId           String
+  customerId        String
+  customerName      String
+  customerGstin     String?
+  customerState     String
+  customerStateCode String
+  placeOfSupply     String
+  isInterState      Boolean
+  taxableValueTotal Float
+  cgstTotal         Float
+  sgstTotal         Float
+  igstTotal         Float
+  grandTotal        Float
+  dispatchStatus    String   @default("PENDING") // 'PENDING' | 'DISPATCHED'
+  dispatchDate      String?
+  dispatchedPackets Float    @default(0.0)
+  paymentReceived   Float    @default(0.0)
+  outstandingBalance Float
+  status            String   @default("POSTED") // 'POSTED' | 'CANCELLED'
+  createdAt         DateTime @default(now())
+
+  customer Customer      @relation(fields: [customerId], references: [id])
+  items    InvoiceItem[]
+}
+
+model InvoiceItem {
+  id           String       @id @default(uuid())
+  invoiceId    String
+  itemId       String
+  itemName     String
+  hsnCode      String
+  quantity     Float
+  uom          String
+  unitPrice    Float
+  taxableValue Float
+  cgstRate     Float
+  cgstAmount   Float
+  sgstRate     Float
+  sgstAmount   Float
+  igstRate     Float
+  igstAmount   Float
+  totalAmount  Float
+
+  invoice SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model PurchaseEntry {
+  id             String   @id @default(uuid())
+  purchaseNumber String   @unique
+  dateStr        String
+  timestamp      BigInt
+  vendorId       String
+  vendorName     String
+  itemId         String
+  itemName       String
+  quantity       Float
+  uom            String
+  ratePerUnit    Float
+  taxableValue   Float
+  gstRate        Float
+  gstAmount      Float
+  totalAmount    Float
+  batchNumber    String
+  createdAt      DateTime @default(now())
+
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+}
+
+model PaymentReceipt {
+  id             String   @id @default(uuid())
+  receiptNumber  String   @unique
+  dateStr        String
+  timestamp      BigInt
+  customerId     String
+  customerName   String
+  invoiceId      String
+  invoiceNumber  String
+  amountReceived Float
+  paymentMode    String   // 'NEFT' | 'UPI' | 'CHEQUE' | 'CASH'
+  referenceNo    String?
+  createdAt      DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+}
+

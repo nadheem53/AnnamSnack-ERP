@@ -50,7 +50,7 @@ export const SalesmanView: React.FC = () => {
     setQuantities((prev) => ({ ...prev, [itemId]: Math.max(0, num) }));
   };
 
-  const handleSubmitOrder = (e: React.FormEvent) => {
+  const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setOrderFeedback(null);
 
@@ -63,7 +63,7 @@ export const SalesmanView: React.FC = () => {
       return;
     }
 
-    const newOrder = createSalesOrder({
+    const newOrder = await createSalesOrder({
       customerId: selectedCustomerId,
       salesmanName,
       items: itemsToOrder,

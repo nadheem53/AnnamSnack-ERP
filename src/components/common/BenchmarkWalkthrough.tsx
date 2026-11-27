@@ -79,9 +79,9 @@ export const BenchmarkWalkthrough: React.FC<BenchmarkWalkthroughProps> = ({
     }, 400);
   };
 
-  const executeSpecificStep = (stepNumber: number) => {
+  const executeSpecificStep = async (stepNumber: number) => {
     if (stepNumber === 1) {
-      recordPurchase({
+      await recordPurchase({
         vendorId: 'vendor-agro-mills',
         itemId: 'item-flour',
         quantity: 60,
@@ -89,7 +89,7 @@ export const BenchmarkWalkthrough: React.FC<BenchmarkWalkthroughProps> = ({
         batchNumber: 'PUR-FLOUR-BENCH-01',
       });
     } else if (stepNumber === 2 || stepNumber === 3 || stepNumber === 8) {
-      executeProductionRun({
+      await executeProductionRun({
         bomId: 'bom-murukku-200g',
         flourQty: 40,
         oilQty: 10.5,
@@ -102,7 +102,7 @@ export const BenchmarkWalkthrough: React.FC<BenchmarkWalkthroughProps> = ({
         notes: 'NIT Tiruchirappalli Benchmark Batch execution',
       });
     } else if (stepNumber === 4) {
-      createSalesOrder({
+      await createSalesOrder({
         customerId: 'cust-retailer-a',
         salesmanName: 'Salesman A (K. Pandian)',
         items: [{ itemId: 'item-murukku-200g', quantity: 150 }],
@@ -110,13 +110,13 @@ export const BenchmarkWalkthrough: React.FC<BenchmarkWalkthroughProps> = ({
     } else if (stepNumber === 5) {
       const orderA = orders.find((o) => o.customerId === 'cust-retailer-a');
       if (orderA) {
-        const invA = approveOrderAndGenerateInvoice(orderA.id);
+        const invA = await approveOrderAndGenerateInvoice(orderA.id);
         if (invA) {
-          dispatchInvoice(invA.id);
+          await dispatchInvoice(invA.id);
         }
       }
     } else if (stepNumber === 6) {
-      createSalesOrder({
+      await createSalesOrder({
         customerId: 'cust-distributor-b',
         salesmanName: 'Salesman B (M. Selvam)',
         items: [{ itemId: 'item-murukku-200g', quantity: 120 }],
@@ -124,7 +124,7 @@ export const BenchmarkWalkthrough: React.FC<BenchmarkWalkthroughProps> = ({
     } else if (stepNumber === 7) {
       const invA = invoices.find((i) => i.customerId === 'cust-retailer-a');
       if (invA) {
-        recordPaymentReceipt({
+        await recordPaymentReceipt({
           customerId: 'cust-retailer-a',
           invoiceId: invA.id,
           amount: 4000,

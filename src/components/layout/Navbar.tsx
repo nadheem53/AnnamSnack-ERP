@@ -16,6 +16,8 @@ import {
   X,
   CheckCircle2,
   AlertTriangle,
+  LogOut,
+  User,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -24,6 +26,8 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
   const {
+    currentUser,
+    logout,
     role,
     setRole,
     lang,
@@ -53,14 +57,14 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
           </span>
           <span className="font-medium text-slate-200">
             {lang === 'en'
-              ? 'Centre for Digital Infrastructure • Order-to-Audit Food Manufacturing Prototype'
+              ? 'Centre for Digital Infrastructure • Order-to-Audit Food Manufacturing System'
               : 'டிஜிட்டல் உள்கட்டமைப்பு மையம், என்.ஐ.டி திருச்சி • உணவு உற்பத்தி அமைப்பு'}
           </span>
         </div>
         <div className="hidden sm:flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-          <span>GSTIN: {FACTORY_INFO.gstin}</span>
+          <span>Database: SQLite + Prisma ORM</span>
           <span>•</span>
-          <span>Place of Supply: 33-Tamil Nadu</span>
+          <span>GSTIN: {FACTORY_INFO.gstin}</span>
         </div>
       </div>
 
@@ -77,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
                 {lang === 'en' ? FACTORY_INFO.name : FACTORY_INFO.nameTamil}
               </h1>
               <span className="text-[10px] font-mono font-bold bg-slate-800 text-brand-400 px-2 py-0.5 rounded border border-slate-700">
-                ERP v2.4
+                Prisma SQL
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
@@ -86,8 +90,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
           </div>
         </div>
 
-        {/* Global Controls: Benchmark Runner, Reset, Language & Notifications */}
+        {/* Global Controls: Benchmark Runner, User Info, Language, Reset & Logout */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* User Session Info Pill */}
+          {currentUser && (
+            <div className="hidden lg:flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+              <User className="w-3.5 h-3.5 text-brand-400" />
+              <div className="text-left font-mono leading-tight">
+                <div className="text-white font-semibold text-[11px] truncate max-w-[130px]">{currentUser.name.split(' ')[0]}</div>
+                <div className="text-[9px] text-slate-400 uppercase font-bold text-brand-300">{currentUser.role}</div>
+              </div>
+            </div>
+          )}
+
           {/* NIT Benchmark Interactive Walkthrough Trigger */}
           <button
             onClick={onOpenBenchmark}
@@ -106,7 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
             title="Reset to Opening Baseline (flour 100kg, oil 30L, pouches 500, murukku 50 pkts)"
           >
             <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden lg:inline text-[11px]">Reset Baseline</span>
+            <span className="hidden xl:inline text-[11px]">Reset DB</span>
           </button>
 
           {/* Language Toggle (English / Tamil) */}
@@ -158,13 +173,25 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
               </div>
             )}
           </div>
+
+          {/* Logout Button */}
+          {currentUser && (
+            <button
+              onClick={logout}
+              className="bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition-all"
+              title="Sign Out of Session"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Role-Based Navigation Bar (Requirement 3: Each role sees only what it needs) */}
+      {/* Role-Based RBAC Session Switcher */}
       <div className="bg-slate-950/80 border-t border-slate-800/60 px-4 py-1.5 flex items-center justify-start sm:justify-center gap-2 overflow-x-auto scrollbar-none">
         <span className="text-xs font-mono text-slate-400 uppercase tracking-wider mr-1 hidden md:inline">
-          {lang === 'en' ? 'Active Role:' : 'பயனர் பங்கு:'}
+          {lang === 'en' ? 'RBAC Role Session:' : 'பயனர் பங்கு:'}
         </span>
         {roles.map((r) => {
           const isActive = role === r.id;
@@ -188,4 +215,3 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenBenchmark }) => {
     </header>
   );
 };
-

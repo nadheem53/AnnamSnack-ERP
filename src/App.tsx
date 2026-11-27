@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { ErpProvider, useErp } from './context/ErpContext';
 import { Navbar } from './components/layout/Navbar';
 import { BenchmarkWalkthrough } from './components/common/BenchmarkWalkthrough';
+import { LoginView } from './components/auth/LoginView';
 import { SalesmanView } from './components/views/SalesmanView';
 import { AdminView } from './components/views/AdminView';
 import { ProductionView } from './components/views/ProductionView';
 import { AuditorView } from './components/views/AuditorView';
 import { OwnerView } from './components/views/OwnerView';
 import { FACTORY_INFO } from './data/seedData';
-import { PlayCircle, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
-  const { role, lang } = useErp();
+  const { currentUser, role } = useErp();
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
 
   return (
@@ -20,11 +21,17 @@ const MainLayout: React.FC = () => {
 
       {/* Main View Container */}
       <main className="flex-1 pb-12">
-        {role === 'salesman' && <SalesmanView />}
-        {role === 'admin' && <AdminView />}
-        {role === 'production' && <ProductionView />}
-        {role === 'auditor' && <AuditorView />}
-        {role === 'owner' && <OwnerView />}
+        {!currentUser ? (
+          <LoginView />
+        ) : (
+          <>
+            {role === 'salesman' && <SalesmanView />}
+            {role === 'admin' && <AdminView />}
+            {role === 'production' && <ProductionView />}
+            {role === 'auditor' && <AuditorView />}
+            {role === 'owner' && <OwnerView />}
+          </>
+        )}
       </main>
 
       {/* NIT Trichy Benchmark Modal */}
@@ -68,4 +75,3 @@ export function App() {
 }
 
 export default App;
-

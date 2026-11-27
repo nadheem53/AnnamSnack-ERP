@@ -71,9 +71,9 @@ export const ProductionView: React.FC = () => {
     });
   };
 
-  const handleRunSubmit = (e: React.FormEvent) => {
+  const handleRunSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const run = executeProductionRun({
+    const run = await executeProductionRun({
       bomId: bom.id,
       flourQty: flourIssued,
       oilQty: oilIssued,

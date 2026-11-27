@@ -5,11 +5,13 @@ Use this exact chronological script when recording your unlisted YouTube or Goog
 
 ---
 
-### [00:00 - 01:00] Introduction & Problem Context
-- **Screen:** Open `http://localhost:5173/` on the Executive Owner Dashboard.
+### [00:00 - 01:00] Introduction, Architecture & Secure Role Login
+- **Screen:** Open `http://localhost:5173/` showing the Secure Login Screen.
 - **What to say:**
   > "Hello evaluators from the Centre for Digital Infrastructure, NIT Tiruchirappalli. I am presenting my solution for the Order-to-Audit system for a packaged South Indian food manufacturer — Annam Food Products in Thuvakudi, Trichy.
-  > The core problem is eliminating fragmented WhatsApp orders, paper stock books, and month-end spreadsheet stress. My system solves this by integrating the Sales loop and the Production loop directly through an immutable finished-goods stock ledger."
+  > The system is backed by a full Node.js + Express backend, Prisma ORM with a relational database, and bcrypt + JWT authentication.
+  > Notice the role-based login: we have separate credentials for Salesmen, Factory Admin, Production Floor, Auditor, and Owner with strict backend RBAC guards. I'll use the 1-click evaluator quick-fill button to log in."
+- **Action:** Click "Owner / Director" quick-fill and log in to show the executive dashboard.
 
 ---
 

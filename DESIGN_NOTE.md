@@ -117,3 +117,26 @@ Tax calculations strictly adhere to Section 7 and Section 8 of the IGST Act, 201
   - Integrated GST (IGST) @ 5.0%
   - *Benchmark:* Distributor B ($120\,\text{pkts} \times ₹50 = ₹6,000$ Taxable). IGST = ₹300.00.
 
+
+---
+
+## 6. Backend API, Relational Schema & Security Architecture
+
+### 6.1 Database Schema (Prisma ORM)
+The backend uses Prisma ORM with SQLite for instant local zero-config testing and PostgreSQL for production deployments:
+- **`User`**: `id`, `name`, `email`, `passwordHash` (bcrypt), `role` (`salesman`, `admin`, `production`, `auditor`, `owner`).
+- **`Item`**: Master records with category tags (`raw_material`, `packaging`, `finished_goods`), standard valuation cost, and selling rates.
+- **`StockLedgerEntry`**: Immutable relational records linking every movement to a `movementType`, `sourceDocType`, and `sourceDocId`.
+- **`BillOfMaterials` & `BomComponent`**: Relational standard recipe formulas.
+- **`ProductionRun` & `ProductionRunItem`**: Relational capture of actual consumption, scrap pouches, cartons, output, and allocated overheads.
+- **`SalesOrder` & `OrderItem`**: Relational order tracking with status lifecycle (`submitted`, `approved`, `invoiced`, `dispatched`, `rejected`).
+- **`SalesInvoice` & `InvoiceItem`**: Legal tax invoices storing taxable amount, CGST, SGST, IGST, and payment balance.
+- **`PaymentReceipt`**: Collection records linked to specific invoices with payment mode, reference number, and audit timestamp.
+
+### 6.2 Authentication & Role-Based Access Control (RBAC)
+- Passwords are never stored in plaintext; they are hashed with `bcryptjs` using 10 salt rounds.
+- Sessions authenticate via standard HTTP `Authorization: Bearer <jwt_token>` headers signed with an HMAC-SHA256 secret.
+- Endpoints enforce the `requireRole(allowedRoles)` middleware:
+  - Route `/api/orders/:id/approve`: Restricted to `admin` and `owner`. Salesman accounts requesting this endpoint receive `HTTP 403 Forbidden`.
+  - Route `/api/invoices/:id/dispatch`: Restricted to `admin`.
+  - Route `/api/production/run`: Restricted to `production` and `admin`.
